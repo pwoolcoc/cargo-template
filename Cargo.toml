@@ -1,0 +1,6 @@
+[package]
+name = "cargo-template"
+version = "0.1.0"
+authors = ["Paul Woolcock <paul@woolcock.us>"]
+
+[dependencies]
