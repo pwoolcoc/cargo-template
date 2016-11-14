@@ -1,6 +1,24 @@
 [package]
+authors = ["Paul Woolcock <paul@woolcock.us>"]
 name = "cargo-template"
 version = "0.1.0"
-authors = ["Paul Woolcock <paul@woolcock.us>"]
+
+[[bin]]
+name = "cargo-template"
+path = "src/bin/template.rs"
 
 [dependencies]
+cargo = "0.14.0"
+clap = "2.18.0"
+derive-new = "0.2.0"
+env_logger = "0.3.5"
+error-chain = "0.5.0"
+git2 = "0.4.4"
+log = "0.3.6"
+serde = "0.8.17"
+serde_derive = "0.8.17"
+serde_json = "0.8.3"
+
+[lib]
+name = "template"
+path = "src/lib.rs"
