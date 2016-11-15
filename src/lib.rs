@@ -8,16 +8,19 @@ extern crate cargo;
 extern crate git2;
 extern crate serde_json;
 extern crate clap;
+extern crate toml;
 
 mod errors;
 
 use std::env;
 use std::path::{Path, PathBuf};
-use std::fs::{File, DirBuilder, self};
+use std::fs::{DirBuilder, File, OpenOptions, self};
 use std::collections::HashMap;
+use std::io::{Read, Write};
 
 use cargo::util;
 use git2::Repository;
+use git2::Config as GitConfig;
 use clap::{App, Arg, ArgSettings};
 
 use errors::*;
@@ -29,7 +32,6 @@ fn ensure_exists<P: AsRef<Path>>(p: P) -> Result<()> {
         let _ = DirBuilder::new().recursive(true).create(p)?;
         Ok(())
 }
-
 
 pub struct Config {
     pub index: String,
@@ -43,7 +45,6 @@ impl Config {
         let cargo_config = util::Config::default()?;
         let index = cargo_config.get_string("template.registry.index")?;
         let index = match index {
-            Some(ref val) if val.val.len() == 0 => DEFAULT_INDEX.to_string(),
             None => DEFAULT_INDEX.to_string(),
             Some(val) => {
                 val.val.to_string()
@@ -121,16 +122,18 @@ impl<'a> IndexLoader<'a> {
         let repo = self.index.join(self.url_to_repo_dir(source));
         if repo.exists()  && repo.is_dir() {
             if !frozen {
-                // self.update_index(source)
+                self.update_index(&repo)
+            } else {
+                Ok(repo)
             }
-            Ok(repo)
         } else {
             self.clone_index(source)
         }
     }
 
-    fn update_index(&self, _source: &str) -> Result<PathBuf> {
-        Err(ErrorKind::GenericError.into())
+    fn update_index<P: AsRef<Path>>(&self, source: P) -> Result<PathBuf> {
+        let source = source.as_ref();
+        Ok(source.to_path_buf())
     }
 
     fn clone_index(&self, source: &str) -> Result<PathBuf> {
@@ -182,7 +185,7 @@ fn copy_dir<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
 
-    debug!("CALLED copy_dir WITH {}, {}", from.to_str().unwrap(), to.to_str().unwrap());
+    debug!("copy_dir({}, {})", from.to_str().unwrap(), to.to_str().unwrap());
 
     if !from.exists() || !from.is_dir() {
         return Err(ErrorKind::SourceDoesNotExist(from.to_string_lossy().into_owned()).into());
@@ -205,8 +208,105 @@ fn copy_dir<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
             copy_dir(path, new_to)?;
         } else if path.is_file() {
             let new_to = to.join(&file_name);
-            debug!("copy {:?} to {:?}", path, new_to);
+            debug!("copy {} to {}", path.to_str().unwrap(), new_to.to_str().unwrap());
             fs::copy(&path, &new_to)?;
+        } else {
+            error!("Oops, this isn't a directory or a file, I don't know how to handle this so I'm just gonna ignore it");
+            error!("problem entry: {:?}", path.to_str());
+        }
+    }
+    Ok(())
+}
+
+// Basically just a port of "get_environment_variable" from cargo/src/cargo/ops/cargo_new.rs
+fn get_environment_variable(variables: &[&str]) -> Option<String> {
+    variables.iter()
+             .filter_map(|var| env::var(var).ok())
+             .next()
+}
+
+// Basically just a port of "discover_author" from cargo/src/cargo/ops/cargo_new.rs
+fn get_name_and_email() -> Result<(String, Option<String>)> {
+    let git_config = GitConfig::open_default().ok();
+    let git_config = git_config.as_ref();
+    let name_variables = ["CARGO_NAME", "GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME",
+                          "USER", "USERNAME", "NAME"];
+    let name = get_environment_variable(&name_variables[0..3])
+                    .or_else(|| git_config.and_then(|g| g.get_string("user.name").ok()))
+                    .or_else(|| get_environment_variable(&name_variables[3..]));
+    let name = match name {
+        Some(name) => name,
+        None => {
+            let username_var = if cfg!(windows) { "USERNAME" } else { "USER" };
+            return Err(ErrorKind::UserError(username_var.into()).into());
+        }
+    };
+    let email_variables = ["CARGO_EMAIL", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL",
+                           "EMAIL"];
+    let email = get_environment_variable(&email_variables[0..3])
+                    .or_else(|| git_config.and_then(|g| g.get_string("user.email").ok()))
+                    .or_else(|| get_environment_variable(&email_variables[3..]));
+    let name = name.trim().to_string();
+    let email = email.map(|s| s.trim().to_string());
+
+    Ok((name, email))
+}
+
+fn format_author(author_name: &str, author_email: &Option<String>) -> String {
+    match *author_email {
+        Some(ref email) => format!("{} <{}>", author_name, email),
+        None => format!("{}", author_name),
+    }
+}
+
+fn write_toml<P: AsRef<Path>>(file: P, val: toml::Value) -> Result<()> {
+    let file = file.as_ref();
+    let mut file = OpenOptions::new().read(true).write(true).open(file)?;
+    let contents = format!("{}", val);
+    write!(file, "{}", contents)?;
+    Ok(())
+}
+fn edit_cargo_toml<P: AsRef<Path>>(file: P, project_name: &str, author_name: &str,
+                                   author_email: &Option<String>) -> Result<()> {
+    let file = file.as_ref();
+    let mut contents = String::new();
+    File::open(file)?.read_to_string(&mut contents)?;
+    let contents = contents;
+    let mut parser = toml::Parser::new(&contents);
+    let mut value = match parser.parse() {
+        Some(val) => val,
+        None => return Err(ErrorKind::TomlParseError(file.to_string_lossy().into_owned()).into()),
+    };
+    match value.get_mut("package") {
+        Some(&mut toml::Value::Table(ref mut t)) => {
+            t.insert("name".into(), toml::Value::String(project_name.to_string()));
+        },
+        Some(_) => return Err(ErrorKind::TomlParseError(file.to_string_lossy().into_owned()).into()),
+        None => return Err(ErrorKind::TomlParseError(file.to_string_lossy().into_owned()).into()),
+    };
+
+    match value.get_mut("package") {
+        Some(&mut toml::Value::Table(ref mut t)) => {
+            t.insert("authors".into(), 
+                     toml::Value::Array(
+                         vec![toml::Value::String(format_author(author_name, author_email))]));
+        },
+        Some(_) => return Err(ErrorKind::TomlParseError(file.to_string_lossy().into_owned()).into()),
+        None => return Err(ErrorKind::TomlParseError(file.to_string_lossy().into_owned()).into()),
+    }
+
+    write_toml(&file, toml::Value::Table(value))?;
+
+    Ok(())
+}
+fn find_cargo_toml<P: AsRef<Path>>(project_dir: P, project_name: &str,
+                                      author_name: &str, author_email: &Option<String>) -> Result<()> {
+    let project_dir = project_dir.as_ref();
+    for entry in fs::read_dir(project_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() && entry.file_name().to_string_lossy() == "Cargo.toml" {
+            edit_cargo_toml(&path, project_name, author_name, author_email)?;
         }
     }
     Ok(())
@@ -237,28 +337,40 @@ pub fn main() -> Result<()> {
     let frozen = matches.is_present("frozen");
     let template = matches.value_of("TEMPLATE").unwrap(); // If we've gotten here, clap has verified that we have this
     let project_name = matches.value_of("NAME").unwrap();
+    let cwd = env::current_dir()?;
+    let project_dir = cwd.join(project_name);
+    if project_dir.exists() {
+        return Err(ErrorKind::ExistsError(project_dir.to_string_lossy().into_owned()).into());
+    }
     debug!("template: {:?}", template);
     debug!("project name: {:?}", project_name);
     let mut config = Config::new()?;
-    let index = get_index(&mut config, frozen)?;
-    let location = match index.get(template) {
-        Some(loc) => loc,
-        None => return Err(ErrorKind::TemplateDoesNotExist(template.into()).into())
+    let metadata = fs::metadata(template);
+    let from = if metadata.is_ok() && metadata.unwrap().is_dir() {
+        debug!("found template on filesystem");
+        Path::new(template).to_path_buf()
+    } else {
+        let index = get_index(&mut config, frozen)?;
+        let location = match index.get(template) {
+            Some(loc) => loc,
+            None => return Err(ErrorKind::TemplateDoesNotExist(template.into()).into())
+        };
+        debug!("template url is {:?}", location);
+        let from = match get_template(template, location, &config.templates_path, frozen) {
+            Ok(loc) => loc,
+            Err(e) => {
+                error!("Error getting template: {}", e);
+                return Err(e);
+            }
+        };
+        from
     };
-    debug!("template location is {:?}", location);
-    let from = match get_template(template, location, &config.templates_path, frozen) {
-        Ok(loc) => loc,
-        Err(e) => {
-            error!("Error getting template: {}", e);
-            return Err(e);
-        }
-    };
-    let cwd = env::current_dir()?;
-    let project_dir = cwd.join(project_name);
     debug!("creating project at {:?}", project_dir);
     copy_dir(&from, &project_dir)?;
     debug!("substituting name & author values");
     // open new Cargo.toml && change the name & author lines
-    
+    let (author_name, author_email) = get_name_and_email()?;
+    debug!("using author info `({:?}, {:?})`", author_name, author_email);
+    find_cargo_toml(&project_dir, &project_name, &author_name, &author_email)?;
     Ok(())
 }
