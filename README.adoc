@@ -1,4 +1,5 @@
 = cargo template
+:toc:
 
 A utility for creating cargo projects from existing projects or templates
 
