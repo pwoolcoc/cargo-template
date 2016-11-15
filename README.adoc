@@ -1,0 +1,57 @@
+= cargo template
+
+A utility for creating cargo projects from existing projects or templates
+
+== Usage
+
+The easiest way to install is through `cargo install`:
+
+[source,bash]
+----
+$ cargo install cargo-template
+----
+
+After this you can create new `rust` projects this way:
+
+[source,bash]
+----
+$ cargo template ~/path/to/my/template my-new-project
+----
+
+You can also use our template index if you don't have any templates locally:
+
+[source,bash]
+----
+$ cargo template iron-basic my-new-iron-project
+----
+
+This requires an internet connection, and will put templates in `~/.cargo/cargo-template`.
+
+The index and templates get saved to your `~/.cargo` directory, so if you know the template you want
+is in there, you can pass `--frozen` to `cargo-template` to ensure that it won't try to use the network.
+
+== Configuration
+
+By default, `cargo-template` will use our index, `https://github.com/rusttemplates/templates.git`. But
+this can be changed by editing your `~/.cargo/config` file.
+
+[source,toml]
+----
+[template.registry]
+index = "https://github.com/foo/bar"
+----
+
+== Caveats
+
+Right now this is the absolute bare minimum I needed for this to work, so there are quite a few things missing, and there
+is bound to be bugs. PRs welcome!
+
+== Contributing Templates
+
+If you would like to contribute to template back to us, well, thanks! Here is how you can do that:
+
+  1. Fork & checkout the template registry, `https://github.com/rusttemplates/templates`
+  2. Open the `index.json` file, and in the `index` array, add an object that contains
+     the `name` and `loc` (location) of your template.
+  3. Open a Pull Request back to the index
+  4. Bask in your awesomeness!
