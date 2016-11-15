@@ -31,6 +31,12 @@ This requires an internet connection, and will put templates in `~/.cargo/cargo-
 The index and templates get saved to your `~/.cargo` directory, so if you know the template you want
 is in there, you can pass `--frozen` to `cargo-template` to ensure that it won't try to use the network.
 
+One issue with using `cargo install` to install `cargo-template` is that we use `cargo` so that we can
+handle cargo config files in a consistent way. Unfortunately most of `cargo` is one big library, so
+we can't just pull in the `cargo/config` parts of it, we have to pull in & compile all of it. Since
+`cargo install` builds in `--release` mode, that means it takes a _while_ to compile `cargo`. Hopefully
+one day `cargo` will be split up into smaller crates where possible.
+
 == Configuration
 
 By default, `cargo-template` will use our index, `https://github.com/rusttemplates/templates.git`. But
