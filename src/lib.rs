@@ -122,7 +122,7 @@ impl<'a> IndexLoader<'a> {
         let repo = self.index.join(self.url_to_repo_dir(source));
         if repo.exists()  && repo.is_dir() {
             if !frozen {
-                self.update_index(&repo)
+                self.update_index(&repo, source)
             } else {
                 Ok(repo)
             }
@@ -131,8 +131,19 @@ impl<'a> IndexLoader<'a> {
         }
     }
 
-    fn update_index<P: AsRef<Path>>(&self, source: P) -> Result<PathBuf> {
+    fn update_index<P: AsRef<Path>>(&self, source: P, url: &str) -> Result<PathBuf> {
+        debug!("Updating index {}", url);
+        println!("Updating index...");
         let source = source.as_ref();
+        let repo = Repository::open(&source)?;
+        let mut remote = repo.remote_anonymous(&url)?;
+        let mut opts = git2::FetchOptions::new();
+        opts.download_tags(git2::AutotagOption::All);
+        let refspec = "refs/heads/*:refs/heads/*";
+        remote.fetch(&[refspec], Some(&mut opts), None)?;
+        let head = repo.head()?.target().unwrap();
+        let obj = repo.find_object(head, None)?;
+        repo.reset(&obj, git2::ResetType::Hard, None)?;
         Ok(source.to_path_buf())
     }
 
