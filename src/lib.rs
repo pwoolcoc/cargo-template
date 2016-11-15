@@ -196,7 +196,7 @@ fn copy_dir<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
         let entry = entry?;
         let file_name = entry.file_name();
         let lossy = file_name.to_string_lossy();
-        if lossy == ".git" {
+        if lossy == ".git" || lossy == "target" {
             continue;
         }
         let path = entry.path();
