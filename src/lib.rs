@@ -4,10 +4,10 @@
 #[macro_use] extern crate log;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate error_chain;
+#[macro_use] extern crate clap;
 extern crate cargo;
 extern crate git2;
 extern crate serde_json;
-extern crate clap;
 extern crate toml;
 
 mod errors;
@@ -314,6 +314,9 @@ fn find_cargo_toml<P: AsRef<Path>>(project_dir: P, project_name: &str,
 
 fn cli() -> App<'static, 'static> {
     App::new("cargo-template")
+        .author(crate_authors!())
+        .version(crate_version!())
+        .usage("cargo template [FLAGS] <TEMPLATE> <NAME>")
         .about("initialize new cargo projects from a predefined template")
         .arg(Arg::with_name("frozen")
                 .long("frozen")
@@ -372,5 +375,6 @@ pub fn main() -> Result<()> {
     let (author_name, author_email) = get_name_and_email()?;
     debug!("using author info `({:?}, {:?})`", author_name, author_email);
     find_cargo_toml(&project_dir, &project_name, &author_name, &author_email)?;
+    debug!("adding project & author info to the Cargo.toml");
     Ok(())
 }
