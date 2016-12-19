@@ -5,11 +5,15 @@ A utility for creating cargo projects from existing projects or templates
 
 == Usage
 
-The easiest way to install is through `cargo install`:
+The easiest way to install is through `cargo install`. The crate requires `nightly`, so
+make sure you use that tolochain to install it:
 
 [source,bash]
 ----
+$ # if nightly is your default:
 $ cargo install cargo-template
+$ # otherwise:
+$ rustup run nightly cargo install cargo-template
 ----
 
 After this you can create new `rust` projects this way:
