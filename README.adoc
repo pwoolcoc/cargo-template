@@ -6,7 +6,7 @@ A utility for creating cargo projects from existing projects or templates
 == Usage
 
 The easiest way to install is through `cargo install`. The crate requires `nightly`, so
-make sure you use that tolochain to install it:
+make sure you use that toolchain to install it:
 
 [source,bash]
 ----
